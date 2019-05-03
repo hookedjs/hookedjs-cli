@@ -3,19 +3,13 @@
 
 const meow = require('meow');
 // const fs = require('fs-extra');
-// const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const shell = require('shelljs');
+// import * as shell from "shelljs";
 const prompt = require('prompt');
 const ChangeCase = require('change-case');
 const colors = require("colors/safe");
-
-
-console.log("\n\n***********************************************************************\n");
-console.log(colors.rainbow("HookedJS"));
-const currentdate = new Date();
-console.log("Current Time: " + currentdate.getFullYear() + "." + (currentdate.getMonth() + 1) + "." + currentdate.getDate() + " @ " + currentdate.getHours() + ":" + currentdate.getMinutes() + ":" + currentdate.getSeconds());
-console.log("\n***********************************************************************\n");
 
 /**
  * Timer
@@ -35,9 +29,10 @@ const cli = meow(`
     $ hookedjs [options]
 
   Options
+    --help, -h  Show usage
     --rainbow, -r  Include a rainbow
-    --init, -i  Create a new HookedJS project
-    --dev, -d  Init HookedJS Contributor Environment
+    --create, -c  Create a new HookedJS project
+    --create-dev, -d  Init HookedJS Contributor Environment
     --watch, -w  Run project in and refresh when files change
 
   Examples
@@ -48,26 +43,53 @@ const cli = meow(`
 
 `, {
     flags: {
-        init: {
+        help: {
             type: 'boolean',
-            alias: 'i'
+            alias: 'h'
         },
-        project: { // for init
+        version: {
+            type: 'boolean',
+            alias: 'v'
+        },
+        create: {
+            type: 'boolean',
+            alias: 'c'
+        },
+        project: { // for create
             type: 'string',
             alias: 'p'
         },
-        dev: {
+        "create-dev": {
             type: 'boolean',
             alias: 'd'
+        },
+        watch: {
+            type: 'boolean',
+            alias: 'w'
         }
     }
 });
 
 
+function printHeader() {
+    console.log("\n\n***********************************************************************\n");
+    console.log(colors.rainbow("HookedJS"));
+    const currentdate = new Date();
+    console.log("Current Time: " + currentdate.getFullYear() + "." + (currentdate.getMonth() + 1) + "." + currentdate.getDate() + " @ " + currentdate.getHours() + ":" + currentdate.getMinutes() + ":" + currentdate.getSeconds());
+    console.log("\n***********************************************************************\n");
+}
+
+async function end() {
+    // console.log("\nSTATS")
+    // console.log("Duration: " + scriptDuration + "s");
+    console.log("\n🌈 Done! 🌈\n");
+    process.exit(); // The timers will keep the process from exiting, so force exit.
+}
+
 /**
  * Consume config and output directories
  */
-async function Init(name) {
+async function Create(name) {
     const slug = ChangeCase.snakeCase((name));
     console.log(`\nCreating project ${name} in folder ${slug}`);
 
@@ -76,17 +98,29 @@ async function Init(name) {
         end();
     }
 
-    const tmp = shell.tempdir();
-    await shell.exec(`rm -rf /tmp/hookedjs; git clone https://github.com/hookedjs/hookedjs.git ${tmp}/hookedjs`);
-    await shell.cp('-r', `${tmp}/hookedjs/boilerplate`, slug,);
-    await shell.exec(`cd ${slug}; yarn`);
+    await shell.mkdir(slug);
+    await shell.cd(slug);
+    await shell.exec(`npm init --yes`, {silent:true});
+    await shell.exec(`yarn add hookedjs`, {silent:true});
+    await shell.exec(`rsync -r node_modules/hookedjs/boilerplate/ .`); // use rsync b/c it will also copy hiddens
+
+    // Reset the package.json meta
+    let packageJson = await JSON.parse(fs.readFileSync("./package.json"));
+    packageJson.name = ChangeCase.paramCase(name);
+    packageJson.author = ChangeCase.paramCase(name);
+    packageJson.description = "A project started with HookedJS";
+    packageJson.version = "0.0.1";
+    fs.writeFileSync("package.json", JSON.stringify(packageJson, ls));
+
+    await shell.exec(`yarn install`, {silent:true});
+
 
     console.log(colors.rainbow("\nCongratulations!"));
-    console.log(`New Project created in ${slug}. To get start, \`cd ${slug}; yarn watch\``);
+    console.log(`New Project created in ${slug}. To get start, \`cd ${slug}; yarn dev\``);
 
     end();
 }
-function InitWithPrompt() {
+function CreateWithPrompt() {
     prompt.start();
     prompt.message = colors.red("Question!");
     prompt.get(
@@ -97,49 +131,88 @@ function InitWithPrompt() {
                 }
             }
         }, function (err, {name}) {
-            Init(name);
+            Create(name);
         }
     );
 }
 
-if (cli.flags['init']) {
-    if (cli.flags['project']) Init(cli.flags['project']);
-    else InitWithPrompt();
-}
-
-// TODO: Verify project is sane
-// if (fs.existsSync(cli.flags['config']))
-//   var configPath = cli.flags['config'];
-// else {
-//   console.log("\nConfig file not found at:");
-//   console.log(" > " + cli.flags['config']);
-//   console.log("Using demo config at:");
-//   console.log(" > " + demoConfig + "\n");
-//   var configPath = demoConfig;
-// }
-
 
 /**
- * Main
+ * Consume config and output directories
  */
+async function CreateDev(name, gitRepo) {
+    const slug = ChangeCase.snakeCase((name));
+    console.log(`\nCreating project ${name} in folder ${slug}`);
 
-async function end() {
-    console.log("\nSTATS")
-    console.log("Duration: " + scriptDuration + "s");
-    console.log("\n🌈 Done! 🌈\n");
-    process.exit(); // The timers will keep the process from exiting, so force exit.
-};
+    if (shell.test('-d', slug) || shell.test('-e', slug)) {
+        console.log(colors.red("Error: Destination folder exists"));
+        end();
+    }
 
+    await shell.exec(`git clone ${gitRepo} ${slug}`);
+    await shell.cd(slug);
+    await shell.exec(`yarn`);
+    await shell.exec(`yarn`, {cwd: "boilerplate"});
+    await shell.exec(`rm project && ln -s boilerplate project`);
+    await shell.exec(`rm -rf hookedjs && ln -s ../../ hookedjs`, {cwd: "boilerplate/node_modules"});
+
+    console.log(colors.rainbow("\nCongratulations!"));
+    console.log(`New Project created in ${slug}. To get start, \`cd ${slug}/boilerplate; yarn dev\``);
+
+    end();
+}
+function CreateDevWithPrompt() {
+    prompt.start();
+    prompt.message = colors.red("Question!");
+    prompt.get(
+        {
+            properties: {
+                name: {
+                    description: colors.blue("Install to what folder? (hookedjs_dev)"),
+                    required: false,
+                    default: "hookedjs_dev",
+                },
+                gitRepo: {
+                    description: colors.blue("Using which git url? (git@github.com:hookedjs/hookedjs.git)"),
+                    required: false,
+                    default: "git@github.com:hookedjs/hookedjs.git",
+                }
+            }
+        }, function (err, {name, gitRepo}) {
+            CreateDev(name, gitRepo);
+        }
+    );
+}
 
 async function dev() {
     console.log("\nRunning in Dev Mode.");
-    shell.exec("yarn dev", {cwd: __dirname});
-    end();
+    await shell.exec("yarn dev", {cwd: "node_modules/hookedjs"});
 }
 
-if (cli.flags['dev']) {
+
+if (cli.flags['version']) {
+    cli.showVersion();
+}
+else if (cli.flags['help']) {
+    cli.showHelp();
+}
+else if (cli.flags['create']) {
+    printHeader();
+    if (cli.flags['project']) Create(cli.flags['project']);
+    else CreateWithPrompt();
+}
+else if (cli.flags['createDev']) {
+    printHeader();
+    CreateDevWithPrompt();
+}
+else if (cli.flags['watch']) {
+    printHeader();
     dev();
 }
+else {
+    cli.showHelp();
+}
+
 
 // setTimeout(() => {
 //   console.log("\nTimeout Reached: Exiting\n");
