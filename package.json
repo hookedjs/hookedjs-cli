@@ -1,7 +1,7 @@
 {
   "name": "hookedjs-cli",
   "author": "Brian Dombrowski <bdombro@gmail.com>",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "license": "ISC",
   "scripts": {
     "test:init": "node bin/hookedjs.js -c -p 'Test'"
